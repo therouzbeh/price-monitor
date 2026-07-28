@@ -1,4 +1,5 @@
 import requests
+from bs4 import BeautifulSoup
 import os
 import json
 import re
@@ -44,19 +45,31 @@ def send_msg(text ):
 def get_digikala_price(url):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/114.0.0.0 Safari/537.36'}
     try:
-        # استخراج variant_id از لینک
-        v_match = re.search(r'variant_id=(\d+)', url)
-        v_id = v_match.group(1) if v_match else None
-        
         response = requests.get(url, headers=headers, timeout=20)
-        content = response.text
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        if v_id:
-            # جستجوی قیمت در نزدیکی کد تنوع در متن صفحه
-            pattern = rf'"id":{v_id}.*?"selling_price":(\d+)'
-            match = re.search(pattern, content)
+        # تلاش برای پیدا کردن قیمت در متن صفحه
+        # قیمت‌ها معمولاً در تگی با ویژگی data-testid="price-final" هستند
+        price_tag = soup.find('span', {'data-testid': 'price-final'})
+        
+        price_str = ""
+        if price_tag:
+            price_str = price_tag.text
+        else:
+            # اگر تگ پیدا نشد، در کل متن دنبال الگوی "عدد تومان" می‌گردیم
+            match = re.search(r'([\d,]+)\s*تومان', response.text)
             if match:
-                return int(match.group(1)) // 10 # تبدیل ریال به تومان
+                price_str = match.group(1)
+        
+        if price_str:
+            price_str = price_str.replace(',', '').strip()
+            # تبدیل اعداد فارسی به انگلیسی
+            farsi_digits = "۰۱۲۳۴۵۶۷۸۹"
+            eng_digits = "0123456789"
+            table = str.maketrans(farsi_digits, eng_digits)
+            price_str = price_str.translate(table)
+            return int(price_str)
+            
         return None
     except:
         return None
@@ -89,9 +102,9 @@ if __name__ == "__main__":
             
             new_history[key] = price
 
-    # در اولین اجرا فقط یک پیام تایید بفرست
+    # در اولین اجرا پیام تایید بفرست
     if first_run_count > 0 and not history:
-        send_msg(f"🚀 *ربات دیجی‌کالا فعال شد!*\nتعداد {first_run_count} محصول با موفقیت شناسایی و قیمت‌های فعلی ثبت شدند. از این پس فقط کاهش قیمت‌ها اطلاع‌رسانی می‌شود.")
+        send_msg(f"🚀 *ربات دیجی‌کالا فعال شد!*\nتعداد {first_run_count} محصول شناسایی و قیمت‌های فعلی ثبت شدند. از این پس فقط کاهش قیمت‌ها اطلاع‌رسانی می‌شود.")
 
     # ذخیره تاریخچه
     with open(history_file, 'w') as f:
